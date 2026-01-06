@@ -46,10 +46,13 @@ class MyApp extends StatefulWidget {
   const MyApp({super.key, required this.isDarkMode, required this.prefs});
 
   @override
-  State<MyApp> createState() => _MyAppState();
+  State<MyApp> createState() => MyAppState();
+
+  static MyAppState? of(BuildContext context) =>
+      context.findAncestorStateOfType<MyAppState>();
 }
 
-class _MyAppState extends State<MyApp> {
+class MyAppState extends State<MyApp> {
   // Simple local state for theme toggling (can be moved to Bloc later)
   late bool _isDark;
 
@@ -129,6 +132,6 @@ class SimpleBlocObserver extends BlocObserver {
   @override
   void onChange(BlocBase bloc, Change change) {
     super.onChange(bloc, change);
-    print('${bloc.runtimeType} $change');
+    debugPrint('${bloc.runtimeType} $change');
   }
 }

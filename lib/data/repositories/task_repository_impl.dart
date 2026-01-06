@@ -6,6 +6,12 @@ import '../datasources/task_local_data_source.dart';
 import '../datasources/task_remote_data_source.dart';
 import '../models/task_model.dart';
 
+/// Concrete implementation of [TaskRepository].
+///
+/// This class acts as the single source of truth for data, orchestrating
+/// between the [TaskRemoteDataSource] (API) and [TaskLocalDataSource] (Hive).
+///
+/// It implements the "Offline First" / "Smart Sync" strategy.
 class TaskRepositoryImpl implements TaskRepository {
   final TaskRemoteDataSource remoteDataSource;
   final TaskLocalDataSource localDataSource;
@@ -14,9 +20,13 @@ class TaskRepositoryImpl implements TaskRepository {
   TaskRepositoryImpl({
     required this.remoteDataSource,
     required this.localDataSource,
-    required this.connectionChecker, // We inject this for testability
+    required this.connectionChecker,
   });
 
+  /// Fetches tasks based on connectivity.
+  ///
+  /// - **Online**: Fetches from API, merges with local-only tasks, caches result.
+  /// - **Offline**: Returns cached tasks.
   @override
   Future<List<Task>> getTasks() async {
     // 1. Check Internet
@@ -28,24 +38,22 @@ class TaskRepositoryImpl implements TaskRepository {
         final remoteTasks = await remoteDataSource.getTasks();
 
         // SMART MERGE:
-        // fetch existing local tasks to preserve ones that are "local-only" (ID > 200 usually)
-        // JSONPlaceholder IDs go up to 200. Anything higher or string-based is likely local.
+        // Fetch existing local tasks to preserve ones that are "local-only"
+        // (Tasks created while offline have timestamp-based IDs, while server uses 1-200)
         final localTasksRaw = await localDataSource.getLastTasks();
 
         final localAddedTasks = localTasksRaw.where((t) {
-          // Check if this is a locally created task (Mock ID check)
-          // JSONPlaceholder uses ints 1-200. We use timestamps/strings for local.
-          // Or simple logic: If it's not in the remote list, keep it.
+          // Keep task if it is NOT present in the remote list (i.e. it's new/local)
           return !remoteTasks.any((remote) => remote.id == t.id);
         }).toList();
 
         // Merge: Local New Tasks + Remote Tasks
         final mergedTasks = [...localAddedTasks, ...remoteTasks];
 
-        // Save merged list to Local
+        // Save merged list to Local Cache
         await localDataSource.cacheTasks(mergedTasks);
 
-        // Return Merged
+        // Return Merged List
         return mergedTasks.map((m) => m.toEntity()).toList();
       } catch (e) {
         // If Server Fails, Fallback to Cache
@@ -60,40 +68,49 @@ class TaskRepositoryImpl implements TaskRepository {
     }
   }
 
+  /// Helper to get local tasks with specific sort order.
   Future<List<Task>> _getLocalTasks() async {
     try {
       final localTasks = await localDataSource.getLastTasks();
-      // Reverse the list to show newest first (TaskModel id is usually increasing or timestamp)
+      // Reverse the list to show newest first (assuming insertion order)
       return localTasks.reversed.map((m) => m.toEntity()).toList();
     } catch (e) {
       throw CacheError();
     }
   }
 
+  /// Adds a task to both Local and Remote sources.
+  /// - If Offline: Generates temp ID and saves locally.
+  /// - If Online: Posts to server (for mock response) AND saves locally.
   @override
   Future<Task> addTask(String title) async {
     bool hasConnection = await connectionChecker.hasInternetAccess;
 
-    // We create a temp Model
-    // JSONPlaceholder (Mock API) returns ID 201 for every create.
-    // In real app, we await server.
+    // Generate a unique ID (Timestamp) for uniqueness
+    // JSONPlaceholder always returns ID 201, which breaks list uniqueness if multiple tasks are added.
+    final uniqueId = DateTime.now().millisecondsSinceEpoch.toString();
 
     if (hasConnection) {
       try {
-        final remoteModel = await remoteDataSource.addTask(title);
+        await remoteDataSource.addTask(title);
+        // We ignore the returned model's ID (which is 201) and use our uniqueId
+
+        final localModel = TaskModel(
+          id: uniqueId,
+          title: title,
+          isCompleted: false,
+        );
+
         // Persist local
-        await localDataSource.addTask(remoteModel);
-        return remoteModel.toEntity();
+        await localDataSource.addTask(localModel);
+        return localModel.toEntity();
       } catch (e) {
         throw ServerError();
       }
     } else {
-      // Offline Creation?
-      // User Requirements: "Allow add ... while offline"
-      // Strategy: Generate a temporary ID, save local.
-      final tempId = DateTime.now().millisecondsSinceEpoch.toString();
+      // Offline Creation
       final localModel = TaskModel(
-        id: tempId,
+        id: uniqueId,
         title: title,
         isCompleted: false,
       );
@@ -106,7 +123,7 @@ class TaskRepositoryImpl implements TaskRepository {
   Future<void> updateTask(Task task) async {
     final model = TaskModel.fromEntity(task);
 
-    // Optimistic Update: Always update local first
+    // Optimistic Update: Always update local DB immediately
     await localDataSource.updateTask(model);
 
     bool hasConnection = await connectionChecker.hasInternetAccess;
@@ -114,16 +131,15 @@ class TaskRepositoryImpl implements TaskRepository {
       try {
         await remoteDataSource.updateTask(model);
       } catch (e) {
-        // If server fails, we have already updated local (Optimistic)
-        // In full production app, we would mark this as "dirty/unsynced"
-        // For this interview, we silently fail the server sync but keep local change
+        // In a real app, queue this for retry.
+        // For this assignment, we accept the optimistic local update.
       }
     }
   }
 
   @override
   Future<void> deleteTask(String id) async {
-    // Optimistic Delete
+    // Optimistic Delete: Remove from local DB immediately
     await localDataSource.deleteTask(id);
 
     bool hasConnection = await connectionChecker.hasInternetAccess;
@@ -131,7 +147,7 @@ class TaskRepositoryImpl implements TaskRepository {
       try {
         await remoteDataSource.deleteTask(id);
       } catch (e) {
-        // Silent fail
+        // Silent fail (cache is already updated)
       }
     }
   }

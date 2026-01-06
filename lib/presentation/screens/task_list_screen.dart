@@ -4,6 +4,7 @@ import '../../blocs/auth/auth_bloc.dart';
 import '../../blocs/auth/auth_state_event.dart';
 import '../../blocs/task/task_bloc.dart';
 import '../../blocs/task/task_state_event.dart';
+import '../../main.dart';
 import '../../core/theme/app_dimensions.dart';
 import '../widgets/add_task_dialog.dart';
 import '../widgets/task_item.dart';
@@ -85,6 +86,20 @@ class _TaskListScreenState extends State<TaskListScreen> {
                   _isSearching = true;
                 }
               });
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.brightness_6),
+            tooltip: 'Toggle Theme',
+            onPressed: () {
+              // To access MyAppState which is in main.dart, we need to import main.dart
+              // However, circular dependency might occur if main imports task_list.
+              // Main imports task_list. Task_list imports main?
+              // Yes, circular dependency risk.
+              // Better solution: Pass a callback or use a ValueNotifier?
+              // Or just use 'dynamic' lookup for this simple hack or cleaner:
+              // context.findAncestorStateOfType<MyAppState>() requires MyAppState visible.
+              MyApp.of(context)?.toggleTheme();
             },
           ),
           if (!_isSearching)
