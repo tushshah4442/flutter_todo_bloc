@@ -2,8 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'blocs/auth/auth_bloc.dart';
+import 'blocs/auth/auth_state_event.dart';
 import 'core/theme/app_theme.dart';
 import 'data/models/task_model.dart';
+import 'data/repositories/auth_repository_impl.dart';
+import 'presentation/screens/login_screen.dart';
 
 void main() async {
   // 1. Ensure bindings are initialized
@@ -21,13 +25,14 @@ void main() async {
   // 4. Set up Bloc Observer (for debugging logs)
   Bloc.observer = SimpleBlocObserver();
 
-  runApp(MyApp(isDarkMode: isDarkMode));
+  runApp(MyApp(isDarkMode: isDarkMode, prefs: prefs));
 }
 
 class MyApp extends StatefulWidget {
   final bool isDarkMode;
+  final SharedPreferences prefs; // Inject prefs
 
-  const MyApp({super.key, required this.isDarkMode});
+  const MyApp({super.key, required this.isDarkMode, required this.prefs});
 
   @override
   State<MyApp> createState() => _MyAppState();
@@ -47,45 +52,45 @@ class _MyAppState extends State<MyApp> {
     setState(() {
       _isDark = !_isDark;
     });
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('isDarkMode', _isDark);
+    await widget.prefs.setBool('isDarkMode', _isDark);
   }
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Flutter Todo Clean Arch',
-      debugShowCheckedModeBanner: false,
+    // 5. Dependency Injection (Root)
+    final authRepository = AuthRepositoryImpl(sharedPreferences: widget.prefs);
 
-      // Theme Configuration
-      theme: AppTheme.lightTheme,
-      darkTheme: AppTheme.darkTheme,
-      themeMode: _isDark ? ThemeMode.dark : ThemeMode.light,
+    return RepositoryProvider(
+      create: (context) => authRepository,
+      child: MultiBlocProvider(
+        providers: [
+          BlocProvider(
+            create: (context) =>
+                AuthBloc(authRepository: authRepository)
+                  ..add(CheckAuthStatus()),
+          ),
+          // TaskBloc will be added here in Phase 5
+        ],
+        child: MaterialApp(
+          title: 'Flutter Todo Clean Arch',
+          debugShowCheckedModeBanner: false,
 
-      home: Scaffold(
-        appBar: AppBar(
-          title: const Text('Todo App Foundation'),
-          actions: [
-            IconButton(
-              icon: Icon(_isDark ? Icons.light_mode : Icons.dark_mode),
-              onPressed: toggleTheme,
-            ),
-          ],
-        ),
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                'Foundation Phase Complete',
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-              const SizedBox(height: 16),
-              const Text('Folder Structure: Checked ✅'),
-              const Text('Theme System: Checked ✅'),
-              const Text('Dimensions System: Checked ✅'),
-              const Text('Hive Initialized: Checked ✅'),
-            ],
+          theme: AppTheme.lightTheme,
+          darkTheme: AppTheme.darkTheme,
+          themeMode: _isDark ? ThemeMode.dark : ThemeMode.light,
+
+          // 6. Navigation Logic based on Auth State
+          home: BlocBuilder<AuthBloc, AuthState>(
+            builder: (context, state) {
+              if (state is Authenticated) {
+                return const HomeScreenPlaceholder();
+              } else if (state is Unauthenticated) {
+                return const LoginScreen();
+              }
+              return const Scaffold(
+                body: Center(child: CircularProgressIndicator()),
+              );
+            },
           ),
         ),
       ),
