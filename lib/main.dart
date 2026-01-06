@@ -3,14 +3,16 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'core/theme/app_theme.dart';
+import 'data/models/task_model.dart';
 
 void main() async {
   // 1. Ensure bindings are initialized
   WidgetsFlutterBinding.ensureInitialized();
 
-  // 2. Initialize Hive (Offline Storage)
+  // 2. Initialize Hive
   await Hive.initFlutter();
-  // TODO: Register Hive Adapters here in future phases
+  Hive.registerAdapter(TaskModelAdapter());
+  await Hive.openBox('tasks_box'); // Open box immediately to be ready
 
   // 3. Initialize SharedPreferences (Settings)
   final prefs = await SharedPreferences.getInstance();
