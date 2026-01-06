@@ -2,12 +2,23 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:http/http.dart' as http;
+import 'package:internet_connection_checker_plus/internet_connection_checker_plus.dart';
+
 import 'blocs/auth/auth_bloc.dart';
 import 'blocs/auth/auth_state_event.dart';
+import 'blocs/task/task_bloc.dart';
+import 'blocs/task/task_state_event.dart';
 import 'core/theme/app_theme.dart';
+import 'data/datasources/task_local_data_source.dart';
+import 'data/datasources/task_remote_data_source.dart';
 import 'data/models/task_model.dart';
 import 'data/repositories/auth_repository_impl.dart';
+import 'data/repositories/task_repository_impl.dart';
+import 'domain/repositories/auth_repository.dart';
+import 'domain/repositories/task_repository.dart';
 import 'presentation/screens/login_screen.dart';
+import 'presentation/screens/task_list_screen.dart';
 
 void main() async {
   // 1. Ensure bindings are initialized
@@ -60,8 +71,20 @@ class _MyAppState extends State<MyApp> {
     // 5. Dependency Injection (Root)
     final authRepository = AuthRepositoryImpl(sharedPreferences: widget.prefs);
 
-    return RepositoryProvider(
-      create: (context) => authRepository,
+    // Dependencies for Task Feature
+    final localDataSource = TaskLocalDataSourceImpl(box: Hive.box('tasks_box'));
+    final remoteDataSource = TaskRemoteDataSourceImpl(client: http.Client());
+    final taskRepository = TaskRepositoryImpl(
+      localDataSource: localDataSource,
+      remoteDataSource: remoteDataSource,
+      connectionChecker: InternetConnection(),
+    );
+
+    return MultiRepositoryProvider(
+      providers: [
+        RepositoryProvider<AuthRepository>(create: (_) => authRepository),
+        RepositoryProvider<TaskRepository>(create: (_) => taskRepository),
+      ],
       child: MultiBlocProvider(
         providers: [
           BlocProvider(
@@ -69,7 +92,10 @@ class _MyAppState extends State<MyApp> {
                 AuthBloc(authRepository: authRepository)
                   ..add(CheckAuthStatus()),
           ),
-          // TaskBloc will be added here in Phase 5
+          BlocProvider(
+            create: (context) =>
+                TaskBloc(taskRepository: taskRepository)..add(LoadTasks()),
+          ),
         ],
         child: MaterialApp(
           title: 'Flutter Todo Clean Arch',
@@ -83,7 +109,7 @@ class _MyAppState extends State<MyApp> {
           home: BlocBuilder<AuthBloc, AuthState>(
             builder: (context, state) {
               if (state is Authenticated) {
-                return const HomeScreenPlaceholder();
+                return const TaskListScreen();
               } else if (state is Unauthenticated) {
                 return const LoginScreen();
               }

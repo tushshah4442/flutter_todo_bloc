@@ -3,7 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../blocs/auth/auth_bloc.dart';
 import '../../blocs/auth/auth_state_event.dart';
 import '../../core/theme/app_dimensions.dart';
-import '../../main.dart'; // To access navigateToHome (we might refactor this later)
+import 'task_list_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -48,7 +48,7 @@ class _LoginScreenState extends State<LoginScreen> {
             // Note: in clean architecture we usually use a Router,
             // but for this simple app, we will pushReplacement.
             Navigator.of(context).pushReplacement(
-              MaterialPageRoute(builder: (_) => const HomeScreenPlaceholder()),
+              MaterialPageRoute(builder: (_) => const TaskListScreen()),
             );
           } else if (state is AuthFailure) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -161,32 +161,6 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         ),
       ),
-    );
-  }
-}
-
-// Temporary Placeholder until Phase 5
-class HomeScreenPlaceholder extends StatelessWidget {
-  const HomeScreenPlaceholder({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Tasks'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: () {
-              context.read<AuthBloc>().add(LogoutRequested());
-              Navigator.of(context).pushReplacement(
-                MaterialPageRoute(builder: (_) => const LoginScreen()),
-              );
-            },
-          ),
-        ],
-      ),
-      body: const Center(child: Text('Task List Coming in Phase 5')),
     );
   }
 }

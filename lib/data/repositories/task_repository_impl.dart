@@ -26,10 +26,27 @@ class TaskRepositoryImpl implements TaskRepository {
       try {
         // Online: Fetch Remote
         final remoteTasks = await remoteDataSource.getTasks();
-        // Save to Local
-        await localDataSource.cacheTasks(remoteTasks);
-        // Return Remote (mapped to Entity)
-        return remoteTasks.map((m) => m.toEntity()).toList();
+
+        // SMART MERGE:
+        // fetch existing local tasks to preserve ones that are "local-only" (ID > 200 usually)
+        // JSONPlaceholder IDs go up to 200. Anything higher or string-based is likely local.
+        final localTasksRaw = await localDataSource.getLastTasks();
+
+        final localAddedTasks = localTasksRaw.where((t) {
+          // Check if this is a locally created task (Mock ID check)
+          // JSONPlaceholder uses ints 1-200. We use timestamps/strings for local.
+          // Or simple logic: If it's not in the remote list, keep it.
+          return !remoteTasks.any((remote) => remote.id == t.id);
+        }).toList();
+
+        // Merge: Local New Tasks + Remote Tasks
+        final mergedTasks = [...localAddedTasks, ...remoteTasks];
+
+        // Save merged list to Local
+        await localDataSource.cacheTasks(mergedTasks);
+
+        // Return Merged
+        return mergedTasks.map((m) => m.toEntity()).toList();
       } catch (e) {
         // If Server Fails, Fallback to Cache
         if (e is ServerError) {
@@ -46,7 +63,8 @@ class TaskRepositoryImpl implements TaskRepository {
   Future<List<Task>> _getLocalTasks() async {
     try {
       final localTasks = await localDataSource.getLastTasks();
-      return localTasks.map((m) => m.toEntity()).toList();
+      // Reverse the list to show newest first (TaskModel id is usually increasing or timestamp)
+      return localTasks.reversed.map((m) => m.toEntity()).toList();
     } catch (e) {
       throw CacheError();
     }
